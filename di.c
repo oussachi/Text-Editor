@@ -24,11 +24,16 @@ void enableRawMode() {
 
     struct termios raw = orig_termios;
 
-    // Here we are disabling echoing in the terminal -ECHO- (keystrokes aren't printed back to us)
-    // We are also disabling canonical mode -ICANON-, allowing us to 
-    // read byte-by-byte instead of line-by-line 
+    // Here we are disabling :
+        // echoing in the terminal -ECHO- (keystrokes aren't printed back to us)
+        // Canonical mode -ICANON-, allowing us to read byte-by-byte instead of line-by-line 
+        // Ctrl+C (SIGINT) and Ctrl+Z (SIGSTP) -ISIG-
+        // Ctrl+S and Ctrl+Q (software flow control) -IXON-
+        // Ctrl+V -IEXTEN- and Ctrl+M -ICNRL-
     // The c_lflag field is a field of miscellaneous flags
-    raw.c_lflag &= ~(ECHO | ICANON);
+    // The c_iflag field is a field of input flags
+    raw.c_iflag &= ~(IXON | ICRNL);
+    raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
 
     // tcsetattr() sets the termios strcut as the terminal's attributes 
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
