@@ -30,10 +30,24 @@ void enableRawMode() {
         // Ctrl+C (SIGINT) and Ctrl+Z (SIGSTP) -ISIG-
         // Ctrl+S and Ctrl+Q (software flow control) -IXON-
         // Ctrl+V -IEXTEN- and Ctrl+M -ICNRL-
+        // Output processing -OPOST- :
+            // \r\n are automatically added after pressing enter
+            // \r or carriage return puts the cursor at the beginning of the line
+            // \n or newline brings the cursor down a line
     // The c_lflag field is a field of miscellaneous flags
     // The c_iflag field is a field of input flags
+    // The c_iflag field is a field of ouput flags
     raw.c_iflag &= ~(IXON | ICRNL);
+    raw.c_oflag &= ~(OPOST);
     raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
+
+    // Adding a timeout for read()
+    // VMIN : min number of bytes before read() can return
+    // VTIME : max time for read() to wait before returning
+    // c_cc field stands for control characters, contains terminal settings
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 10;
+
 
     // tcsetattr() sets the termios strcut as the terminal's attributes 
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
@@ -42,14 +56,17 @@ void enableRawMode() {
 int main() {
     enableRawMode();
 
-    char c;
-    while(read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
+    while(1) {
+        char c = '\0';
+        read(STDIN_FILENO, &c, 1);
         if (iscntrl(c)) { 
             //iscntr(c) checks if a character is a control character aka non-printable
-            printf("%d\n", c);
+            // we print \r to bring the cursor to the start of the line
+            printf("%d\r\n", c);
         } else {
-            printf("%d (%c)\n", c, c);
+            printf("%d (%c)\r\n", c, c);
         }
-    };
+        if (c == 'q') break;
+    }
     return 0;
 }
