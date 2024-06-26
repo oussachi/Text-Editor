@@ -5,6 +5,7 @@
 #include<ctype.h>
 #include<stdio.h>
 #include<errno.h>
+#include<sys/ioctl.h>
 
 
 // ***************** defines ****************** //
@@ -13,8 +14,13 @@
 
 
 // ***************** data ****************** //
-struct termios orig_termios; // contains the original terminal attributes
+struct editor_config { // contains the terminal's global state
+    struct termios orig_termios; // contains the original terminal attributes
+    int screen_rows; // number of rows in the terminal
+    int screen_cols; // number of columns in the terminal
+};
 
+struct editor_config E;
 
 // ***************** terminal ****************** //
 // error printing + exit function
@@ -29,7 +35,7 @@ void die(const char * s) {
 // a function to disable raw mode 
 void disableRawMode() {
     // We set the terminal's attributes to their original values
-    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
         die("tcsetattr");
 }
 
@@ -39,12 +45,12 @@ void enableRawMode() {
     // tcgetattr() retrieves the terminal's attributes and places them in a termios struct
     // We retrieve the terminal's original attributes and 
     // save them in orig_termios to restore them later
-    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1)
+    if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1)
         die("tcgetattr");
     // disable raw mode at exit
     atexit(disableRawMode);
 
-    struct termios raw = orig_termios;
+    struct termios raw = E.orig_termios;
 
     // Here we are disabling :
         // echoing in the terminal -ECHO- (keystrokes aren't printed back to us)
@@ -86,8 +92,31 @@ char editorReadKey() {
     return c;
 }
 
+// A function that gets the size of the terminal (nb of rows and cols) using ioctl() and TIOCGWINSZ request
+int getWindowSize(int *rows, int *cols) {
+    struct winsize ws;
+
+    if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+        return -1;
+    } else {
+        *rows = ws.ws_row;
+        *cols = ws.ws_col;
+        return 0;
+    }
+}
+
 
 // ***************** output ****************** //
+// A function that draws a tilde(~) at each line after the end of the file being edited
+void editorDrawRows() {
+    int y;
+    for(y = 0; y < E.screen_rows; y++) {
+        write(STDOUT_FILENO, "~\r\n", 3);
+    }
+}
+
+
+
 // A function that clears the screen 
 void editorRefreshScreen() {
     // We are writing an escape sequence to the terminal
@@ -96,6 +125,9 @@ void editorRefreshScreen() {
     // for more info on escape sequences : https://en.wikipedia.org/wiki/VT100
     write(STDOUT_FILENO, "\x1b[2J", 4);
     // The escape sequence "\x1b[H" places the cursor on the top left corner
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    editorDrawRows();
     write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
@@ -116,8 +148,17 @@ void editorProcessKeypress() {
 
 
 // ***************** init ****************** //
+
+
+void initEditor() {
+    if(getWindowSize(&E.screen_rows, &E.screen_cols) == -1)
+        die("getWindowSize");
+}
+
+
 int main() {
     enableRawMode();
+    initEditor();
 
     while(1) {
         editorRefreshScreen();
