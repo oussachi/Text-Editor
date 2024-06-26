@@ -1,15 +1,36 @@
+// ***************** includes ****************** //
 #include<unistd.h>
 #include<termios.h>
 #include<stdlib.h>
 #include<ctype.h>
 #include<stdio.h>
+#include<errno.h>
 
+
+// ***************** defines ****************** //
+// This defines a Ctrl+key key stroke, since Ctrl+key returns ints from 1 to 26
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+
+// ***************** data ****************** //
 struct termios orig_termios; // contains the original terminal attributes
+
+
+// ***************** terminal ****************** //
+// error printing + exit function
+void die(const char * s) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    perror(s);
+    exit(1);
+}
 
 // a function to disable raw mode 
 void disableRawMode() {
     // We set the terminal's attributes to their original values
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
+        die("tcsetattr");
 }
 
 
@@ -18,7 +39,8 @@ void enableRawMode() {
     // tcgetattr() retrieves the terminal's attributes and places them in a termios struct
     // We retrieve the terminal's original attributes and 
     // save them in orig_termios to restore them later
-    tcgetattr(STDIN_FILENO, &orig_termios);
+    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1)
+        die("tcgetattr");
     // disable raw mode at exit
     atexit(disableRawMode);
 
@@ -50,23 +72,56 @@ void enableRawMode() {
 
 
     // tcsetattr() sets the termios strcut as the terminal's attributes 
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+        die("tcsetattr");
 }
 
+// A function that waits for one keypress and returns it
+char editorReadKey() {
+    char c;
+    int nread;
+    while((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if(nread == -1 && errno != EAGAIN) die("read");
+    }
+    return c;
+}
+
+
+// ***************** output ****************** //
+// A function that clears the screen 
+void editorRefreshScreen() {
+    // We are writing an escape sequence to the terminal
+    // escape sequences always start with "\x1b["
+    // the escape sequence used is J with the argument 2, which will clear the entire screen
+    // for more info on escape sequences : https://en.wikipedia.org/wiki/VT100
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    // The escape sequence "\x1b[H" places the cursor on the top left corner
+    write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+
+
+// ***************** input ****************** //
+// A function that handles one keypress
+void editorProcessKeypress() {
+    char c = editorReadKey();
+    switch (c) {
+        case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
+    }
+}
+
+
+// ***************** init ****************** //
 int main() {
     enableRawMode();
 
     while(1) {
-        char c = '\0';
-        read(STDIN_FILENO, &c, 1);
-        if (iscntrl(c)) { 
-            //iscntr(c) checks if a character is a control character aka non-printable
-            // we print \r to bring the cursor to the start of the line
-            printf("%d\r\n", c);
-        } else {
-            printf("%d (%c)\r\n", c, c);
-        }
-        if (c == 'q') break;
+        editorRefreshScreen();
+        editorProcessKeypress();
     }
     return 0;
 }
