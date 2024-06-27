@@ -92,12 +92,41 @@ char editorReadKey() {
     return c;
 }
 
+// A function that returns the current cursor position, used in case ioctl() fails
+int getCursorPosition(int *rows, int *cols) {
+    char buf[32];
+    unsigned int i = 0;
+
+    // The escape sequence "\x1b[6n" or the n command (used to get terminal's status info) 
+    // with the parameter 6 returns the cursor position
+    if(write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+
+    // We store the returned string of the escape sequence in a buffer
+    while(i < sizeof(buf)) {
+        if(read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        if(buf[i] == 'R') break;
+        i++;
+    }
+    buf[i] = '\0';
+
+    // We pass the value in the buffer to rows and cols
+    if(buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if(sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
+
+    return 0;
+}
+
+
 // A function that gets the size of the terminal (nb of rows and cols) using ioctl() and TIOCGWINSZ request
 int getWindowSize(int *rows, int *cols) {
     struct winsize ws;
 
     if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        return -1;
+        // 999C sends the cursor 999 positions to the right, 999B sends it 999 positions down
+        // This is to ensure we reach the bottom right corner
+        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) 
+            return -1;
+        return getCursorPosition(rows, cols);
     } else {
         *rows = ws.ws_row;
         *cols = ws.ws_col;
@@ -126,8 +155,9 @@ void editorRefreshScreen() {
     write(STDOUT_FILENO, "\x1b[2J", 4);
     // The escape sequence "\x1b[H" places the cursor on the top left corner
     write(STDOUT_FILENO, "\x1b[H", 3);
-
+    // Drawing the tildes
     editorDrawRows();
+    // Repositioning the cursor at the top-left corner
     write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
