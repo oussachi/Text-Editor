@@ -1,11 +1,12 @@
 // ***************** includes ****************** //
-#include<unistd.h>
-#include<termios.h>
-#include<stdlib.h>
-#include<ctype.h>
-#include<stdio.h>
-#include<errno.h>
-#include<sys/ioctl.h>
+#include <unistd.h>
+#include <termios.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/ioctl.h>
 
 
 // ***************** defines ****************** //
@@ -135,12 +136,39 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 
+// ***************** append buffer ****************** //
+struct abuf {
+    char *b;
+    int len; 
+};
+
+#define ABUF_INIT {NULL, 0}
+
+// A function that appends a string s to the string of an abuf struct ab
+void abAppend(struct abuf *ab, const char *s, int len) {
+    char *new = realloc(ab->b, ab->len + len);
+
+    if(new == NULL) return;
+    memcpy(&new[ab->len], s, len);
+    ab->b = new;
+    ab->len += len;
+}
+
+// A function that frees the string of a abuf struct
+void abFree(struct abuf *ab) {
+    free(ab->b);
+}
+
 // ***************** output ****************** //
 // A function that draws a tilde(~) at each line after the end of the file being edited
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
     int y;
     for(y = 0; y < E.screen_rows; y++) {
-        write(STDOUT_FILENO, "~\r\n", 3);
+        abAppend(ab, "~", 1);
+
+        if(y < E.screen_rows - 1) {
+            abAppend(ab, "\r\n", 2);
+        }
     }
 }
 
@@ -148,17 +176,21 @@ void editorDrawRows() {
 
 // A function that clears the screen 
 void editorRefreshScreen() {
+    struct abuf ab = ABUF_INIT;
+
     // We are writing an escape sequence to the terminal
     // escape sequences always start with "\x1b["
     // the escape sequence used is J with the argument 2, which will clear the entire screen
     // for more info on escape sequences : https://en.wikipedia.org/wiki/VT100
-    write(STDOUT_FILENO, "\x1b[2J", 4);
+    abAppend(&ab, "\x1b[2J", 4);
     // The escape sequence "\x1b[H" places the cursor on the top left corner
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    abAppend(&ab, "\x1b[H", 3);
     // Drawing the tildes
-    editorDrawRows();
+    editorDrawRows(&ab);
     // Repositioning the cursor at the top-left corner
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    abAppend(&ab, "\x1b[H", 3);
+    write(STDOUT_FILENO, ab.b, ab.len);
+    abFree(&ab);
 }
 
 
